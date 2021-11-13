@@ -1,6 +1,8 @@
 #include "SoapyPlutoSDR.hpp"
 #include <SoapySDR/Registry.hpp>
 #include <sstream>
+#include <chrono>
+#include <thread>
 
 static std::vector<SoapySDR::Kwargs> results;
 static std::vector<SoapySDR::Kwargs> find_PlutoSDR(const SoapySDR::Kwargs &args) {
@@ -13,6 +15,9 @@ static std::vector<SoapySDR::Kwargs> find_PlutoSDR(const SoapySDR::Kwargs &args)
 	iio_scan_context *scan_ctx;
 	iio_context_info **info;
 	SoapySDR::Kwargs options;
+
+	// Prevent a race condition on usb enumeration, defer to other drivers
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
 	// Backends can error, scan each one individually
 	std::vector<std::string> backends = {"local", "usb", "ip"};
