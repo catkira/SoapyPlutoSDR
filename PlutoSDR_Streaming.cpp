@@ -6,10 +6,12 @@
 #include <iterator>
 #include <algorithm>
 #include <chrono>
+#include <iio/iio-debug.h>
 
 //TODO: Need to be a power of 2 for maximum efficiency ?
 # define DEFAULT_RX_BUFFER_SIZE (1 << 16)
 
+#define BLOCK_SIZE (1024 * 1024)
 
 std::vector<std::string> SoapyPlutoSDR::getStreamFormats(const int direction, const size_t channel) const
 {
@@ -311,15 +313,16 @@ rx_streamer::rx_streamer(const iio_device *_dev, const plutosdrStreamFormat _for
 		throw std::runtime_error("cf-ad9361-lpc not found!");
 	}
 	unsigned int nb_channels = iio_device_get_channels_count(dev), i;
+    rxmask = iio_create_channels_mask(nb_channels);
 	for (i = 0; i < nb_channels; i++)
-		iio_channel_disable(iio_device_get_channel(dev, i));
+		iio_channel_disable(iio_device_get_channel(dev, i), rxmask);
 
 	//default to channel 0, if none were specified
 	const std::vector<size_t> &channelIDs = channels.empty() ? std::vector<size_t>{0} : channels;
 
 	for (i = 0; i < channelIDs.size() * 2; i++) {
 		struct iio_channel *chn = iio_device_get_channel(dev, i);
-		iio_channel_enable(chn);
+		iio_channel_enable(chn, rxmask);
 		channel_list.push_back(chn);
 	}
 
@@ -352,7 +355,7 @@ rx_streamer::~rx_streamer()
     }
 
     for (unsigned int i = 0; i < channel_list.size(); ++i) {
-        iio_channel_disable(channel_list[i]);
+        iio_channel_disable(channel_list[i], rxmask);
     }
 
 
@@ -366,6 +369,10 @@ size_t rx_streamer::recv(void * const *buffs,
 		const long timeoutUs)
 {
     //
+    const struct iio_block *rxblock;
+    size_t rx_sample_sz = iio_device_get_sample_size(dev, rxmask);
+    ptrdiff_t p_inc = rx_sample_sz;
+    int16_t *p_dat;
 	if (items_in_buffer <= 0) {
 
        // auto before = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
@@ -374,14 +381,19 @@ size_t rx_streamer::recv(void * const *buffs,
 		    return 0;
 	    }
 
-		ssize_t ret = iio_buffer_refill(buf);
+		//ssize_t ret = iio_buffer_refill(buf);
+		rxblock = iio_stream_get_next_block(rxstream);
+		int err = iio_err(rxblock);
+		if (err) {
+			//ctx_perror(ctx, err, "Unable to receive block");  // TODO: why does this generate a linker error?
+			return 0;
+		}        
 
         // auto after = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
 
-		if (ret < 0)
-			return SOAPY_SDR_TIMEOUT;
-
-		items_in_buffer = (unsigned long)ret / iio_buffer_step(buf);
+		//if (ret < 0)
+		//	return SOAPY_SDR_TIMEOUT;
+		items_in_buffer = (unsigned long)iio_block_end(rxblock) / (p_inc / sizeof(*p_dat));
 
         // SoapySDR_logf(SOAPY_SDR_INFO, "iio_buffer_refill took %d ms to refill %d items", (int)(after - before), items_in_buffer);
 
@@ -390,12 +402,13 @@ size_t rx_streamer::recv(void * const *buffs,
 
 	size_t items = std::min(items_in_buffer,numElems);
 
-	ptrdiff_t buf_step = iio_buffer_step(buf);
+	//ptrdiff_t buf_step = iio_buffer_step(buf);
 
 	if (direct_copy) {
+        /*
 		// optimize for single RX, 2 channel (I/Q), same endianess direct copy
 		// note that RX is 12 bits LSB aligned, i.e. fullscale 2048
-		uint8_t *src = (uint8_t *)iio_buffer_start(buf) + byte_offset;
+		uint8_t *src = (uint8_t *)iio_block_first(rxblock, channel_list[0]) + byte_offset;  // TODO: channel_list
 		int16_t const *src_ptr = (int16_t *)src;
 
 		if (format == PLUTO_SDR_CS16) {
@@ -438,6 +451,7 @@ size_t rx_streamer::recv(void * const *buffs,
 				dst_cs8++;
 			}
 		}
+        */
 	}
 	else {
 		int16_t conv = 0, *conv_ptr = &conv;
@@ -446,7 +460,7 @@ size_t rx_streamer::recv(void * const *buffs,
 			iio_channel *chn = channel_list[i];
 			unsigned int index = i / 2;
 
-			uint8_t *src = (uint8_t *)iio_buffer_first(buf, chn) + byte_offset;
+			uint8_t *src = (uint8_t *)iio_block_first(rxblock, chn) + byte_offset;
 			int16_t const *src_ptr = (int16_t *)src;
 
 			if (format == PLUTO_SDR_CS16) {
@@ -455,7 +469,7 @@ size_t rx_streamer::recv(void * const *buffs,
 
 				for (size_t j = 0; j < items; ++j) {
 					iio_channel_convert(chn, conv_ptr, src_ptr);
-					src_ptr += buf_step;
+					src_ptr += p_inc;
 					dst_cs16[j * 2 + i] = conv;
 				}
 			}
@@ -465,7 +479,7 @@ size_t rx_streamer::recv(void * const *buffs,
 
 				for (size_t j = 0; j < items; ++j) {
 					iio_channel_convert(chn, conv_ptr, src_ptr);
-					src_ptr += buf_step;
+					src_ptr += p_inc;
 					dst_cf32[j * 2 + i] = float(conv) / 2048.0f;
 				}
 			}
@@ -475,7 +489,7 @@ size_t rx_streamer::recv(void * const *buffs,
 
 				for (size_t j = 0; j < items; ++j) {
 					iio_channel_convert(chn, conv_ptr, src_ptr);
-					src_ptr += buf_step;
+					src_ptr += p_inc;
 					dst_cs8[j * 2 + i] = int8_t(conv >> 4);
 				}
 			}
@@ -484,7 +498,7 @@ size_t rx_streamer::recv(void * const *buffs,
 	}
 
 	items_in_buffer -= items;
-	byte_offset += items * iio_buffer_step(buf);
+	byte_offset += items * (p_inc / sizeof(*p_dat));
 
 	return(items);
 
@@ -498,16 +512,25 @@ int rx_streamer::start(const int flags,
     stop(flags, timeNs);
 
     // re-create buffer
-	buf = iio_device_create_buffer(dev, buffer_size, false);
+	buf = iio_device_create_buffer(dev, 0, rxmask); // TODO: why not use buffer_size?
 
 	if (!buf) {
 		SoapySDR_logf(SOAPY_SDR_ERROR, "Unable to create buffer!");
 		throw std::runtime_error("Unable to create buffer!\n");
 	}
 
-	direct_copy = has_direct_copy();
+	rxstream = iio_buffer_create_stream(buf, 4, BLOCK_SIZE);
+	int err = iio_err(rxstream);
+	if (err) {
+		rxstream = NULL;
+		//dev_perror(dev, iio_err(rxstream), "Could not create RX stream");  // TODO: why does this generate a linker error?
+		//shutdown();   // TODO where does this function come from?
+	}
 
+	direct_copy = has_direct_copy();
 	SoapySDR_logf(SOAPY_SDR_INFO, "Has direct RX copy: %d", (int)direct_copy);
+    
+    ctx = iio_device_get_context(dev);    
 
 	return 0;
 
@@ -548,7 +571,7 @@ void rx_streamer::set_buffer_size(const size_t _buffer_size){
 		items_in_buffer = 0;
         byte_offset = 0;
 
-		buf = iio_device_create_buffer(dev, _buffer_size, false);
+		buf = iio_device_create_buffer(dev, _buffer_size, rxmask); // TODO: why is 0 used as buffer_size in example?
 		if (!buf) {
 			SoapySDR_logf(SOAPY_SDR_ERROR, "Unable to create buffer!");
 			throw std::runtime_error("Unable to create buffer!\n");
@@ -566,6 +589,7 @@ size_t rx_streamer::get_mtu_size() {
 // return wether can we optimize for single RX, 2 channel (I/Q), same endianess direct copy
 bool rx_streamer::has_direct_copy()
 {
+    /*
 	if (channel_list.size() != 2) // one RX with I + Q
 		return false;
 
@@ -581,7 +605,8 @@ bool rx_streamer::has_direct_copy()
 	iio_channel_convert(channel_list[0], &test_dst, (const void *)&test_src);
 
 	return test_src == test_dst;
-
+    */
+    return false;
 }
 
 
@@ -589,45 +614,17 @@ tx_streamer::tx_streamer(const iio_device *_dev, const plutosdrStreamFormat _for
 	dev(_dev), format(_format), buf(nullptr)
 {
 
-	if (dev == nullptr) {
-		SoapySDR_logf(SOAPY_SDR_ERROR, "cf-ad9361-dds-core-lpc not found!");
-		throw std::runtime_error("cf-ad9361-dds-core-lpc not found!");
-	}
 
-	unsigned int nb_channels = iio_device_get_channels_count(dev), i;
-	for (i = 0; i < nb_channels; i++)
-		iio_channel_disable(iio_device_get_channel(dev, i));
-
-	//default to channel 0, if none were specified
-	const std::vector<size_t> &channelIDs = channels.empty() ? std::vector<size_t>{0} : channels;
-
-	for (i = 0; i < channelIDs.size() * 2; i++) {
-		iio_channel *chn = iio_device_get_channel(dev, i);
-		iio_channel_enable(chn);
-		channel_list.push_back(chn);
-	}
-
-	buf_size = 4096;
-	items_in_buf = 0;
-	buf = iio_device_create_buffer(dev, buf_size, false);
-	if (!buf) {
-		SoapySDR_logf(SOAPY_SDR_ERROR, "Unable to create buffer!");
-		throw std::runtime_error("Unable to create buffer!");
-	}
-
-	direct_copy = has_direct_copy();
-
-	SoapySDR_logf(SOAPY_SDR_INFO, "Has direct TX copy: %d", (int)direct_copy);
 
 }
 
 tx_streamer::~tx_streamer(){
-
+    /*
 	if (buf) { iio_buffer_destroy(buf); }
 
 	for(unsigned int i=0;i<channel_list.size(); ++i)
 		iio_channel_disable(channel_list[i]);
-
+    */
 }
 
 int tx_streamer::send(	const void * const *buffs,
@@ -637,6 +634,7 @@ int tx_streamer::send(	const void * const *buffs,
 		const long timeoutUs )
 
 {
+    /*
     if (!buf) {
         return 0;
     }
@@ -743,7 +741,8 @@ int tx_streamer::send(	const void * const *buffs,
 	}
 
 	return items;
-
+    */
+    return 0;
 }
 
 int tx_streamer::flush()
@@ -753,6 +752,7 @@ int tx_streamer::flush()
 
 int tx_streamer::send_buf()
 {
+    /*
     if (!buf) {
         return 0;
     }
@@ -777,13 +777,14 @@ int tx_streamer::send_buf()
 	}
 
 	return 0;
-
+    */
+    return 0;
 }
 
 // return wether can we optimize for single TX, 2 channel (I/Q), same endianess direct copy
 bool tx_streamer::has_direct_copy()
 {
-
+    /*
 	if (channel_list.size() != 2) // one TX with I/Q
 		return false;
 
@@ -799,5 +800,6 @@ bool tx_streamer::has_direct_copy()
 	iio_channel_convert_inverse(channel_list[0], &test_dst, (const void *)&test_src);
 
 	return test_src == test_dst;
-
+    */
+    return false;
 }

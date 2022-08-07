@@ -9,42 +9,42 @@ static std::vector<SoapySDR::Kwargs> find_PlutoSDR(const SoapySDR::Kwargs &args)
 		return results;
 
 	ssize_t ret = 0;
-	iio_context *ctx = nullptr;
-	iio_scan_context *scan_ctx;
-	iio_context_info **info;
+	struct iio_context *ctx = nullptr;
+	struct iio_scan *scan_ctx = nullptr;
+    //struct *iio_scan = 0;
+	//iio_context_info **info;
 	SoapySDR::Kwargs options;
 	// Backends can error, scan each one individually
 	std::vector<std::string> backends = {"local", "usb", "ip"};
 	for (std::vector<std::string>::iterator it = backends.begin(); it != backends.end(); it++) {
 
-		scan_ctx = iio_create_scan_context(it->c_str(), 0);
+		//scan_ctx = iio_create_scan_context(it->c_str(), 0);
+        scan_ctx = iio_scan(NULL, it->c_str());
 		if (scan_ctx == nullptr) {
 			SoapySDR_logf(SOAPY_SDR_WARNING, "Unable to setup %s scan\n", it->c_str());
 			continue;
 		}
 
-		info = nullptr;
-		ret = iio_scan_context_get_info_list(scan_ctx, &info);
+		//info = nullptr;
+		ret = iio_scan_get_results_count(scan_ctx);
 		if (ret < 0) {
 			SoapySDR_logf(SOAPY_SDR_WARNING, "Unable to scan %s: %li\n", it->c_str(), (long)ret);
-			iio_context_info_list_free(info);
-			iio_scan_context_destroy(scan_ctx);
+			//iio_context_info_list_free(info);
+			iio_scan_destroy(scan_ctx);
 			continue;
 		}
 
 		options["device"] = "PlutoSDR";
-        if (args.count("freq_offset") != 0)
-            options["freq_offset"] = args.at("freq_offset");
             
 		if (ret == 0) {
-			iio_context_info_list_free(info);
-			iio_scan_context_destroy(scan_ctx);
+			//iio_context_info_list_free(info);
+			iio_scan_destroy(scan_ctx);
 
 			//no devices discovered, the user must specify a hostname
 			if (args.count("hostname") == 0) continue;
 
 			//try to connect at the specified hostname
-			ctx = iio_create_network_context(args.at("hostname").c_str());
+			ctx = iio_create_context(NULL, args.at("hostname").c_str());
 			if (ctx == nullptr) continue; //failed to connect
 			options["hostname"] = args.at("hostname");
 
@@ -57,9 +57,9 @@ static std::vector<SoapySDR::Kwargs> find_PlutoSDR(const SoapySDR::Kwargs &args)
 
 		} else {
 			for (int i = 0; i < ret; i++) {
-				ctx = iio_create_context_from_uri(iio_context_info_get_uri(info[i]));
+				ctx = iio_create_context(NULL, iio_scan_get_uri(scan_ctx, i));
 				if (ctx != nullptr) {
-					options["uri"] = std::string(iio_context_info_get_uri(info[i]));
+					options["uri"] = std::string(iio_scan_get_uri(scan_ctx, i));
 
 					std::ostringstream label_str;
 					label_str << options["device"] << " #" << i << " " << options["uri"];
@@ -70,8 +70,8 @@ static std::vector<SoapySDR::Kwargs> find_PlutoSDR(const SoapySDR::Kwargs &args)
 				}
 
 			}
-			iio_context_info_list_free(info);
-			iio_scan_context_destroy(scan_ctx);
+			//iio_context_info_list_free(info);
+			iio_scan_destroy(scan_ctx);
 		}
 
 	}

@@ -15,22 +15,17 @@ SoapyPlutoSDR::SoapyPlutoSDR( const SoapySDR::Kwargs &args ):
 	if (args.count("label") != 0)
 		SoapySDR_logf( SOAPY_SDR_INFO, "Opening %s...", args.at("label").c_str());
 
-	if (args.count("freq_offset") != 0)
-    {
-		SoapySDR_logf( SOAPY_SDR_INFO, "Frequency offset %s PPM", args.at("freq_offset").c_str());
-        frequencyOffset = std::stof(args.at("freq_offset"));
-    }
-
 	if(ctx == nullptr)
 	{
 	  if(args.count("uri") != 0) {
 
-		  ctx = iio_create_context_from_uri(args.at("uri").c_str());
+		  ctx = iio_create_context(NULL, args.at("uri").c_str());
 
 	  }else if(args.count("hostname")!=0){
-		  ctx = iio_create_network_context(args.at("hostname").c_str());
+		  ctx = iio_create_context(NULL, args.at("hostname").c_str());
 	  }else{
-		  ctx = iio_create_default_context();
+		  //ctx = iio_create_default_context();
+		  ctx = iio_create_context(NULL, NULL);
 	  }
 	}
 
@@ -95,15 +90,20 @@ SoapySDR::Kwargs SoapyPlutoSDR::getHardwareInfo( void ) const
 	SoapySDR::Kwargs info;
 
 	unsigned int major, minor;
+    /*
 	char git_tag[8];
 	iio_library_get_version(&major, &minor, git_tag);
 	char lib_ver[100];
 	snprintf(lib_ver, 100, "%u.%u (git tag: %s)", major, minor, git_tag);
 	info["library_version"] = lib_ver;
+    */
 
-	iio_context_get_version(ctx, &major, &minor, git_tag);
+	//iio_context_get_version(ctx, &major, &minor, git_tag);
+    minor = iio_context_get_version_minor(ctx);
+    major = iio_context_get_version_major(ctx);
+    const char *tag = iio_context_get_version_tag(ctx);
 	char backend_ver[100];
-	snprintf(backend_ver, 100, "%u.%u (git tag: %s)", major, minor, git_tag);
+	snprintf(backend_ver, 100, "%u.%u (git tag: %s)", major, minor, tag);
 	info["backend_version"] = backend_ver;
 
 	unsigned int nb_ctx_attrs = iio_context_get_attrs_count(ctx);
@@ -160,22 +160,22 @@ double SoapyPlutoSDR::get_sensor_value(struct iio_channel *chn) const
 	double val = 0.0;
 
 	if (iio_channel_find_attr(chn, "input")) {
-		if (iio_channel_attr_read(chn, "input", buf, sizeof(buf)) > 0) {
+		if (iio_channel_attr_read_raw(chn, "input", buf, sizeof(buf)) > 0) {
 			val = double_from_buf(buf);
 		}
 	} else {
-		if (iio_channel_attr_read(chn, "raw", buf, sizeof(buf)) > 0) {
+		if (iio_channel_attr_read_raw(chn, "raw", buf, sizeof(buf)) > 0) {
 			val = double_from_buf(buf);
 		}
 
 		if (iio_channel_find_attr(chn, "offset")) {
-			if (iio_channel_attr_read(chn, "offset", buf, sizeof(buf)) > 0) {
+			if (iio_channel_attr_read_raw(chn, "offset", buf, sizeof(buf)) > 0) {
 				val += double_from_buf(buf);
 			}
 		}
 
 		if (iio_channel_find_attr(chn, "scale")) {
-			if (iio_channel_attr_read(chn, "scale", buf, sizeof(buf)) > 0) {
+			if (iio_channel_attr_read_raw(chn, "scale", buf, sizeof(buf)) > 0) {
 				val *= double_from_buf(buf);
 			}
 		}
@@ -343,12 +343,12 @@ void SoapyPlutoSDR::setAntenna( const int direction, const size_t channel, const
 {
    if (direction == SOAPY_SDR_RX) {
        std::lock_guard<pluto_spin_mutex> lock(rx_device_mutex);
-		iio_channel_attr_write(iio_device_find_channel(dev, "voltage0", false), "rf_port_select", name.c_str());
+		iio_channel_attr_write_raw(iio_device_find_channel(dev, "voltage0", false), "rf_port_select", name.c_str(), name.length());
 	}
 
 	else if (direction == SOAPY_SDR_TX) {
         std::lock_guard<pluto_spin_mutex> lock(tx_device_mutex);
-		iio_channel_attr_write(iio_device_find_channel(dev, "voltage0", true), "rf_port_select", name.c_str());
+		iio_channel_attr_write_raw(iio_device_find_channel(dev, "voltage0", true), "rf_port_select", name.c_str(), name.length());
 
 	} 
 }
@@ -403,11 +403,11 @@ void SoapyPlutoSDR::setGainMode( const int direction, const size_t channel, cons
         std::lock_guard<pluto_spin_mutex> lock(rx_device_mutex);
 		if (gainMode) {
 
-			iio_channel_attr_write(iio_device_find_channel(dev, "voltage0", false), "gain_control_mode", "slow_attack");
+			iio_channel_attr_write_raw(iio_device_find_channel(dev, "voltage0", false), "gain_control_mode", "slow_attack", std::string("slow_attack").length());
 
 		}else{
 
-			iio_channel_attr_write(iio_device_find_channel(dev, "voltage0", false), "gain_control_mode", "manual");
+			iio_channel_attr_write_raw(iio_device_find_channel(dev, "voltage0", false), "gain_control_mode", "manual", std::string("manual").length());
 		}
 
 	}
@@ -483,12 +483,12 @@ void SoapyPlutoSDR::setFrequency( const int direction, const size_t channel, con
 	if(direction==SOAPY_SDR_RX){
 
         std::lock_guard<pluto_spin_mutex> lock(rx_device_mutex);
-		iio_channel_attr_write_longlong(iio_device_find_channel(dev, "altvoltage0", true),"frequency", freq * (1 - frequencyOffset*1e-6));
+		iio_channel_attr_write_longlong(iio_device_find_channel(dev, "altvoltage0", true),"frequency", freq);
 	}
 
 	else if(direction==SOAPY_SDR_TX){
         std::lock_guard<pluto_spin_mutex> lock(tx_device_mutex);
-		iio_channel_attr_write_longlong(iio_device_find_channel(dev, "altvoltage1", true),"frequency", freq * (1 - frequencyOffset*1e-6));
+		iio_channel_attr_write_longlong(iio_device_find_channel(dev, "altvoltage1", true),"frequency", freq);
 
 	}
 
@@ -516,7 +516,7 @@ double SoapyPlutoSDR::getFrequency( const int direction, const size_t channel, c
 
 	}
 
-	return double(freq / (1 - frequencyOffset*1e-6));
+	return double(freq);
 
 }
 
@@ -647,6 +647,8 @@ std::vector<double> SoapyPlutoSDR::listSampleRates( const int direction, const s
 	options.push_back(8e6);
 	options.push_back(9e6);
 	options.push_back(10e6);
+	options.push_back(15e6);
+	options.push_back(20e6);
 	return(options);
 
 }
@@ -721,6 +723,8 @@ std::vector<double> SoapyPlutoSDR::listBandwidths( const int direction, const si
 	options.push_back(8e6);
 	options.push_back(9e6);
 	options.push_back(10e6);
+	options.push_back(15e6);
+	options.push_back(20e6);
 	return(options);
 
 }

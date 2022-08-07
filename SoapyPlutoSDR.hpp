@@ -1,4 +1,4 @@
-#include <iio.h>
+#include <iio/iio.h>
 #include <vector>
 #include <mutex>
 #include <thread>
@@ -53,6 +53,9 @@ class rx_streamer {
 		const plutosdrStreamFormat format;
 		bool direct_copy;
         size_t mtu_size;
+        struct iio_channels_mask *rxmask;
+        struct iio_stream *rxstream;
+        const struct iio_context *ctx;        
 
 };
 
