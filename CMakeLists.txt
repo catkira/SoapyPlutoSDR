@@ -20,7 +20,7 @@ endif ()
 # Find libiio
 ########################################################################
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR})
-find_package(LibIIO 0.9 REQUIRED)
+find_package(LibIIO 1.0 REQUIRED)
 
 if (LibIIO_FOUND)
     message(STATUS "LibIIO_INCLUDE_DIRS: ${LibIIO_INCLUDE_DIRS}")

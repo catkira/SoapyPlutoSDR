@@ -90,20 +90,18 @@ SoapySDR::Kwargs SoapyPlutoSDR::getHardwareInfo( void ) const
 	SoapySDR::Kwargs info;
 
 	unsigned int major, minor;
-    /*
-	char git_tag[8];
-	iio_library_get_version(&major, &minor, git_tag);
+    minor = iio_context_get_version_minor(NULL);
+    major = iio_context_get_version_major(NULL);
+    const char *git_tag1 = iio_context_get_version_tag(NULL);
 	char lib_ver[100];
-	snprintf(lib_ver, 100, "%u.%u (git tag: %s)", major, minor, git_tag);
+	snprintf(lib_ver, 100, "%u.%u (git tag: %s)", major, minor, git_tag1);
 	info["library_version"] = lib_ver;
-    */
 
-	//iio_context_get_version(ctx, &major, &minor, git_tag);
     minor = iio_context_get_version_minor(ctx);
     major = iio_context_get_version_major(ctx);
-    const char *tag = iio_context_get_version_tag(ctx);
+    const char *git_tag2 = iio_context_get_version_tag(ctx);
 	char backend_ver[100];
-	snprintf(backend_ver, 100, "%u.%u (git tag: %s)", major, minor, tag);
+	snprintf(backend_ver, 100, "%u.%u (git tag: %s)", major, minor, git_tag2);
 	info["backend_version"] = backend_ver;
 
 	unsigned int nb_ctx_attrs = iio_context_get_attrs_count(ctx);

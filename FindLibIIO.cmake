@@ -14,7 +14,7 @@ find_package(PkgConfig)
 pkg_check_modules(PC_LibIIO QUIET libiio)
 set(LibIIO_DEFINITIONS ${PC_LibIIO_CFLAGS_OTHER})
 
-find_path(LibIIO_INCLUDE_DIR iio.h
+find_path(LibIIO_INCLUDE_DIR iio/iio.h
           HINTS ${PC_LibIIO_INCLUDEDIR} ${PC_LibIIO_INCLUDE_DIRS}
           PATH_SUFFIXES libiio)
 

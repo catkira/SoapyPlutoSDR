@@ -1,6 +1,7 @@
 #include "SoapyPlutoSDR.hpp"
 #include <SoapySDR/Registry.hpp>
 #include <sstream>
+#include <iostream>
 
 static std::vector<SoapySDR::Kwargs> results;
 static std::vector<SoapySDR::Kwargs> find_PlutoSDR(const SoapySDR::Kwargs &args) {
@@ -11,25 +12,21 @@ static std::vector<SoapySDR::Kwargs> find_PlutoSDR(const SoapySDR::Kwargs &args)
 	ssize_t ret = 0;
 	struct iio_context *ctx = nullptr;
 	struct iio_scan *scan_ctx = nullptr;
-    //struct *iio_scan = 0;
-	//iio_context_info **info;
 	SoapySDR::Kwargs options;
 	// Backends can error, scan each one individually
 	std::vector<std::string> backends = {"local", "usb", "ip"};
 	for (std::vector<std::string>::iterator it = backends.begin(); it != backends.end(); it++) {
 
-		//scan_ctx = iio_create_scan_context(it->c_str(), 0);
         scan_ctx = iio_scan(NULL, it->c_str());
 		if (scan_ctx == nullptr) {
 			SoapySDR_logf(SOAPY_SDR_WARNING, "Unable to setup %s scan\n", it->c_str());
 			continue;
 		}
 
-		//info = nullptr;
 		ret = iio_scan_get_results_count(scan_ctx);
+        printf("found %i devices\n",ret);
 		if (ret < 0) {
 			SoapySDR_logf(SOAPY_SDR_WARNING, "Unable to scan %s: %li\n", it->c_str(), (long)ret);
-			//iio_context_info_list_free(info);
 			iio_scan_destroy(scan_ctx);
 			continue;
 		}
@@ -37,13 +34,12 @@ static std::vector<SoapySDR::Kwargs> find_PlutoSDR(const SoapySDR::Kwargs &args)
 		options["device"] = "PlutoSDR";
             
 		if (ret == 0) {
-			//iio_context_info_list_free(info);
 			iio_scan_destroy(scan_ctx);
 
 			//no devices discovered, the user must specify a hostname
 			if (args.count("hostname") == 0) continue;
 
-			//try to connect at the specified hostname
+			//try to connect at the specified hostname            
 			ctx = iio_create_context(NULL, args.at("hostname").c_str());
 			if (ctx == nullptr) continue; //failed to connect
 			options["hostname"] = args.at("hostname");
@@ -70,7 +66,6 @@ static std::vector<SoapySDR::Kwargs> find_PlutoSDR(const SoapySDR::Kwargs &args)
 				}
 
 			}
-			//iio_context_info_list_free(info);
 			iio_scan_destroy(scan_ctx);
 		}
 
