@@ -393,7 +393,8 @@ size_t rx_streamer::recv(void * const *buffs,
 
 		//if (ret < 0)
 		//	return SOAPY_SDR_TIMEOUT;
-		printf("received 1 block: first=%ld end=%ld inc=%ld\n",iio_block_first(rxblock, channel_list[0]),iio_block_end(rxblock), p_inc);
+		long len = (long)iio_block_end(rxblock) - (long)iio_block_first(rxblock, channel_list[0]);
+		printf("received 1 block: first=%ld end=%ld len = %ld inc=%ld\n",iio_block_first(rxblock, channel_list[0]),iio_block_end(rxblock), len, p_inc);
 
 		items_in_buffer = ((unsigned long)iio_block_end(rxblock) - (unsigned long)iio_block_first(rxblock, channel_list[0])) / (p_inc);
 
@@ -504,7 +505,7 @@ size_t rx_streamer::recv(void * const *buffs,
 	items_in_buffer -= items;
 	//printf("items=%zu p_inc=%lu, p_dat=%lu\n", items, (unsigned long)p_inc, (unsigned long)p_dat);
 	byte_offset += items * p_inc;
-	printf("finished read: items_in_buffer=%zu byte_offset=%zu\n", items_in_buffer, byte_offset);
+	printf("finished read %ld items: items_in_buffer=%zu byte_offset=%zu\n", items, items_in_buffer, byte_offset);
 
 	return(items);
 
@@ -518,14 +519,15 @@ int rx_streamer::start(const int flags,
     stop(flags, timeNs);
 
     // re-create buffer
-	buf = iio_device_create_buffer(dev, 0, rxmask); // TODO: why not use buffer_size?
+	if (!buf)
+		buf = iio_device_create_buffer(dev, 0, rxmask);
 
 	if (!buf) {
 		SoapySDR_logf(SOAPY_SDR_ERROR, "Unable to create buffer!");
 		throw std::runtime_error("Unable to create buffer!\n");
 	}
 
-	rxstream = iio_buffer_create_stream(buf, 4, BLOCK_SIZE);
+	rxstream = iio_buffer_create_stream(buf, 4, buffer_size);
 	int err = iio_err(rxstream);
 	if (err) {
 		rxstream = NULL;
@@ -563,28 +565,6 @@ int rx_streamer::stop(const int flags,
 }
 
 void rx_streamer::set_buffer_size(const size_t _buffer_size){
-
-	if (!buf || this->buffer_size != _buffer_size) {
-        //cancel first
-        if (buf) {
-            iio_buffer_cancel(buf);
-        }
-        //then destroy
-        if (buf) {
-            iio_buffer_destroy(buf);
-        }
-
-		items_in_buffer = 0;
-        byte_offset = 0;
-
-		buf = iio_device_create_buffer(dev, _buffer_size, rxmask); // TODO: why is 0 used as buffer_size in example?
-		if (!buf) {
-			SoapySDR_logf(SOAPY_SDR_ERROR, "Unable to create buffer!");
-			throw std::runtime_error("Unable to create buffer!\n");
-		}
-
-	}
-
 	this->buffer_size=_buffer_size;
 }
 
