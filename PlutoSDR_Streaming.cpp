@@ -325,6 +325,7 @@ rx_streamer::rx_streamer(const iio_device *_dev, const plutosdrStreamFormat _for
 		iio_channel_enable(chn, rxmask);
 		channel_list.push_back(chn);
 	}
+	printf("enabled %ld channels\n", channel_list.size());
 
 	if ( args.count( "bufflen" ) != 0 ){
 
@@ -396,7 +397,7 @@ size_t rx_streamer::recv(void * const *buffs,
 		long len = (long)iio_block_end(rxblock) - (long)iio_block_first(rxblock, channel_list[0]);
 		printf("received 1 block: first=%ld end=%ld len = %ld inc=%ld\n",iio_block_first(rxblock, channel_list[0]),iio_block_end(rxblock), len, p_inc);
 
-		items_in_buffer = ((unsigned long)iio_block_end(rxblock) - (unsigned long)iio_block_first(rxblock, channel_list[0])) / (p_inc);
+		items_in_buffer = ((unsigned long)iio_block_end(rxblock) - (unsigned long)iio_block_first(rxblock, channel_list[0])) / (unsigned long)(p_inc);
 
         // SoapySDR_logf(SOAPY_SDR_INFO, "iio_buffer_refill took %d ms to refill %d items", (int)(after - before), items_in_buffer);
 
@@ -409,7 +410,6 @@ size_t rx_streamer::recv(void * const *buffs,
 	//ptrdiff_t buf_step = iio_buffer_step(buf);
 
 	if (direct_copy) {
-        /*
 		// optimize for single RX, 2 channel (I/Q), same endianess direct copy
 		// note that RX is 12 bits LSB aligned, i.e. fullscale 2048
 		uint8_t *src = (uint8_t *)iio_block_first(rxblock, channel_list[0]) + byte_offset;  // TODO: channel_list
@@ -455,26 +455,25 @@ size_t rx_streamer::recv(void * const *buffs,
 				dst_cs8++;
 			}
 		}
-        */
 	}
 	else {
+		// TODO: I think this is not needed anymore with libiio 1.0 !
+		/*
 		int16_t conv = 0, *conv_ptr = &conv;
+		uint8_t *src = (uint8_t *)iio_block_first(rxblock, chn) + byte_offset;
+		int16_t const *src_ptr = (int16_t *)src;
 
 		for (unsigned int i = 0; i < channel_list.size(); i++) {
 			iio_channel *chn = channel_list[i];
 			unsigned int index = i / 2;
 
-			uint8_t *src = (uint8_t *)iio_block_first(rxblock, chn) + byte_offset;
-			int16_t const *src_ptr = (int16_t *)src;
-			if (src_ptr > iio_block_end(rxblock))
-				printf("Error\n");
 			if (format == PLUTO_SDR_CS16) {
 
 				int16_t *dst_cs16 = (int16_t *)buffs[index];
 
 				for (size_t j = 0; j < items; ++j) {
 					iio_channel_convert(chn, conv_ptr, src_ptr);
-					src_ptr += p_inc;
+					src_ptr += p_inc/sizeof(*p_dat);
 					dst_cs16[j * 2 + i] = conv;
 				}
 			}
@@ -484,7 +483,7 @@ size_t rx_streamer::recv(void * const *buffs,
 
 				for (size_t j = 0; j < items; ++j) {
 					iio_channel_convert(chn, conv_ptr, src_ptr);
-					src_ptr += p_inc;
+					src_ptr += p_inc/sizeof(*p_dat);
 					dst_cf32[j * 2 + i] = float(conv) / 2048.0f;
 				}
 			}
@@ -494,12 +493,12 @@ size_t rx_streamer::recv(void * const *buffs,
 
 				for (size_t j = 0; j < items; ++j) {
 					iio_channel_convert(chn, conv_ptr, src_ptr);
-					src_ptr += p_inc;
+					src_ptr += p_inc/sizeof(*p_dat);
 					dst_cs8[j * 2 + i] = int8_t(conv >> 4);
 				}
 			}
-
 		}
+		*/
 	}
 
 	items_in_buffer -= items;
@@ -537,6 +536,7 @@ int rx_streamer::start(const int flags,
 
 	direct_copy = has_direct_copy();
 	SoapySDR_logf(SOAPY_SDR_INFO, "Has direct RX copy: %d", (int)direct_copy);
+	printf("Has direct RX copy: %d\n", (int)direct_copy);
     
     ctx = iio_device_get_context(dev);    
 
@@ -566,6 +566,8 @@ int rx_streamer::stop(const int flags,
 
 void rx_streamer::set_buffer_size(const size_t _buffer_size){
 	this->buffer_size=_buffer_size;
+	//this->buffer_size=10000;
+	//this->buffer_size=1048576;
 }
 
 size_t rx_streamer::get_mtu_size() {
@@ -575,24 +577,24 @@ size_t rx_streamer::get_mtu_size() {
 // return wether can we optimize for single RX, 2 channel (I/Q), same endianess direct copy
 bool rx_streamer::has_direct_copy()
 {
-    /*
 	if (channel_list.size() != 2) // one RX with I + Q
 		return false;
 
-	ptrdiff_t buf_step = iio_buffer_step(buf);
+	ptrdiff_t buf_step = iio_device_get_sample_size(dev, rxmask);
 
 	if (buf_step != 2 * sizeof(int16_t))
 		return false;
-
-	if (iio_buffer_start(buf) != iio_buffer_first(buf, channel_list[0]))
-		return false;
-
+	
+	//if (iio_block_start(rxblock) != iio_block_first(rxblock, iio_device_get_channel(dev, 0)))
+	//auto buf_data = iio_buffer_get_data(buf);
+	//if (iio_buffer_start(buf) != iio_buffer_first(buf, channel_list[0]))
+		//return false;
+	//printf("a\n");
+	
 	int16_t test_dst, test_src = 0x1234;
 	iio_channel_convert(channel_list[0], &test_dst, (const void *)&test_src);
 
 	return test_src == test_dst;
-    */
-    return false;
 }
 
 
