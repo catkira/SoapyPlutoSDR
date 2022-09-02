@@ -369,7 +369,7 @@ size_t rx_streamer::recv(void * const *buffs,
 		const long timeoutUs)
 {
     //
-    const struct iio_block *rxblock;
+	printf("------- recv -------\n");
     size_t rx_sample_sz = iio_device_get_sample_size(dev, rxmask);
     ptrdiff_t p_inc = rx_sample_sz;
     int16_t *p_dat;
@@ -393,14 +393,17 @@ size_t rx_streamer::recv(void * const *buffs,
 
 		//if (ret < 0)
 		//	return SOAPY_SDR_TIMEOUT;
-		items_in_buffer = (unsigned long)iio_block_end(rxblock) / (p_inc / sizeof(*p_dat));
+		printf("received 1 block: first=%ld end=%ld inc=%ld\n",iio_block_first(rxblock, channel_list[0]),iio_block_end(rxblock), p_inc);
+
+		items_in_buffer = ((unsigned long)iio_block_end(rxblock) - (unsigned long)iio_block_first(rxblock, channel_list[0])) / (p_inc);
 
         // SoapySDR_logf(SOAPY_SDR_INFO, "iio_buffer_refill took %d ms to refill %d items", (int)(after - before), items_in_buffer);
 
 		byte_offset = 0;
 	}
+	//printf("%zu items in buffer\n", items_in_buffer);
 
-	size_t items = std::min(items_in_buffer,numElems);
+	size_t items = std::min(items_in_buffer, numElems);
 
 	//ptrdiff_t buf_step = iio_buffer_step(buf);
 
@@ -462,7 +465,8 @@ size_t rx_streamer::recv(void * const *buffs,
 
 			uint8_t *src = (uint8_t *)iio_block_first(rxblock, chn) + byte_offset;
 			int16_t const *src_ptr = (int16_t *)src;
-
+			if (src_ptr > iio_block_end(rxblock))
+				printf("Error\n");
 			if (format == PLUTO_SDR_CS16) {
 
 				int16_t *dst_cs16 = (int16_t *)buffs[index];
@@ -498,7 +502,9 @@ size_t rx_streamer::recv(void * const *buffs,
 	}
 
 	items_in_buffer -= items;
-	byte_offset += items * (p_inc / sizeof(*p_dat));
+	//printf("items=%zu p_inc=%lu, p_dat=%lu\n", items, (unsigned long)p_inc, (unsigned long)p_dat);
+	byte_offset += items * p_inc;
+	printf("finished read: items_in_buffer=%zu byte_offset=%zu\n", items_in_buffer, byte_offset);
 
 	return(items);
 

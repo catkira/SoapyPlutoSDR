@@ -46,6 +46,7 @@ class rx_streamer {
 		std::vector<iio_channel* > channel_list;
 		const iio_device  *dev;
 
+    	const struct iio_block *rxblock;
 		size_t buffer_size;
 		size_t byte_offset;
 		size_t items_in_buffer;
@@ -56,7 +57,6 @@ class rx_streamer {
         struct iio_channels_mask *rxmask;
         struct iio_stream *rxstream;
         const struct iio_context *ctx;        
-
 };
 
 class tx_streamer {
