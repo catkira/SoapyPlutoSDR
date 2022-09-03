@@ -296,10 +296,9 @@ void rx_streamer::set_buffer_size_by_samplerate(const size_t samplerate) {
     set_mtu_size(this->buffer_size);
 }
 
-void rx_streamer::set_mtu_size(const size_t mtu_size) {
-
+void rx_streamer::set_mtu_size(const size_t mtu_size) 
+{
     this->mtu_size = mtu_size;
-
     SoapySDR_logf(SOAPY_SDR_INFO, "Set MTU Size: %lu", (unsigned long)mtu_size);
 }
 
@@ -327,8 +326,8 @@ rx_streamer::rx_streamer(const iio_device *_dev, const plutosdrStreamFormat _for
 	}
 	printf("enabled %ld channels\n", channel_list.size());
 
-	if ( args.count( "bufflen" ) != 0 ){
-
+	if ( args.count( "bufflen" ) != 0 )
+	{
 		try
 		{
 			size_t bufferLength = std::stoi(args.at("bufflen"));
@@ -336,31 +335,24 @@ rx_streamer::rx_streamer(const iio_device *_dev, const plutosdrStreamFormat _for
 				this->set_buffer_size(bufferLength);
 		}
 		catch (const std::invalid_argument &){}
-
-	}else{
-
+	}
+	else
+	{
 		long long samplerate;
-
-		iio_channel_attr_read_longlong(iio_device_find_channel(dev, "voltage0", false),"sampling_frequency",&samplerate);
-
+		iio_channel_attr_read_longlong(iio_device_find_channel(dev, "voltage0", false), "sampling_frequency", &samplerate);
 		this->set_buffer_size_by_samplerate(samplerate);
-
 	}
 }
 
 rx_streamer::~rx_streamer()
 {
-	if (buf) {
+	if (buf) 
+	{
         iio_buffer_cancel(buf);
         iio_buffer_destroy(buf);
     }
-
-    for (unsigned int i = 0; i < channel_list.size(); ++i) {
+    for (unsigned int i = 0; i < channel_list.size(); ++i) 
         iio_channel_disable(channel_list[i], rxmask);
-    }
-
-
-
 }
 
 size_t rx_streamer::recv(void * const *buffs,
@@ -369,37 +361,31 @@ size_t rx_streamer::recv(void * const *buffs,
 		long long &timeNs,
 		const long timeoutUs)
 {
-    //
-	printf("------- recv -------\n");
     size_t rx_sample_sz = iio_device_get_sample_size(dev, rxmask);
     ptrdiff_t p_inc = rx_sample_sz;
     int16_t *p_dat;
-	if (items_in_buffer <= 0) {
-
-       // auto before = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
-
-	    if (!buf) {
+	if (items_in_buffer <= 0) 
+	{
+        auto before = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+	    if (!buf)
 		    return 0;
-	    }
 
-		//ssize_t ret = iio_buffer_refill(buf);
 		rxblock = iio_stream_get_next_block(rxstream);
 		int err = iio_err(rxblock);
-		if (err) {
-			//ctx_perror(ctx, err, "Unable to receive block");  // TODO: why does this generate a linker error?
-			return 0;
+		if (err) 
+		{
+			SoapySDR_logf(SOAPY_SDR_ERROR, "Unable to receive block!");
+			throw std::runtime_error("Unable to receive block!\n");
 		}        
 
-        // auto after = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+        auto after = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
 
-		//if (ret < 0)
-		//	return SOAPY_SDR_TIMEOUT;
 		long len = (long)iio_block_end(rxblock) - (long)iio_block_first(rxblock, channel_list[0]);
-		printf("received 1 block: first=%ld end=%ld len = %ld inc=%ld\n",iio_block_first(rxblock, channel_list[0]),iio_block_end(rxblock), len, p_inc);
+		//printf("received 1 block: first=%ld end=%ld len = %ld inc=%ld\n",iio_block_first(rxblock, channel_list[0]),iio_block_end(rxblock), len, p_inc);
 
 		items_in_buffer = ((unsigned long)iio_block_end(rxblock) - (unsigned long)iio_block_first(rxblock, channel_list[0])) / (unsigned long)(p_inc);
 
-        // SoapySDR_logf(SOAPY_SDR_INFO, "iio_buffer_refill took %d ms to refill %d items", (int)(after - before), items_in_buffer);
+        //SoapySDR_logf(SOAPY_SDR_INFO, "iio_stream_get_next_block took %d ms to get %d items", (int)(after - before), items_in_buffer);
 
 		byte_offset = 0;
 	}
@@ -409,33 +395,32 @@ size_t rx_streamer::recv(void * const *buffs,
 
 	//ptrdiff_t buf_step = iio_buffer_step(buf);
 
-	if (direct_copy) {
+	if (direct_copy) 
+	{
 		// optimize for single RX, 2 channel (I/Q), same endianess direct copy
 		// note that RX is 12 bits LSB aligned, i.e. fullscale 2048
-		uint8_t *src = (uint8_t *)iio_block_first(rxblock, channel_list[0]) + byte_offset;  // TODO: channel_list
+		uint8_t *src = (uint8_t *)iio_block_first(rxblock, channel_list[0]) + byte_offset;
 		int16_t const *src_ptr = (int16_t *)src;
 
-		if (format == PLUTO_SDR_CS16) {
-
+		if (format == PLUTO_SDR_CS16) 
+		{
 			::memcpy(buffs[0], src_ptr, 2 * sizeof(int16_t) * items);
-
 		}
-		else if (format == PLUTO_SDR_CF32) {
-
+		else if (format == PLUTO_SDR_CF32) 
+		{
 			float *dst_cf32 = (float *)buffs[0];
-
-			for (size_t index = 0; index < items * 2; ++index) {
+			for (size_t index = 0; index < items * 2; ++index) 
+			{
 				*dst_cf32 = float(*src_ptr) / 2048.0f;
 				src_ptr++;
 				dst_cf32++;
 			}
-
 		}
-		else if (format == PLUTO_SDR_CS12) {
-
+		else if (format == PLUTO_SDR_CS12) 
+		{
 			int8_t *dst_cs12 = (int8_t *)buffs[0];
-
-			for (size_t index = 0; index < items; ++index) {
+			for (size_t index = 0; index < items; ++index) 
+			{
 				int16_t i = *src_ptr++;
 				int16_t q = *src_ptr++;
 				// produce 24 bit (iiqIQQ), note the input is LSB aligned, scale=2048
@@ -445,66 +430,68 @@ size_t rx_streamer::recv(void * const *buffs,
 				*dst_cs12++ = uint8_t(q >> 4);
 			}
 		}
-		else if (format == PLUTO_SDR_CS8) {
-
+		else if (format == PLUTO_SDR_CS8) 
+		{
 			int8_t *dst_cs8 = (int8_t *)buffs[0];
-
-			for (size_t index = 0; index < items * 2; index++) {
+			for (size_t index = 0; index < items * 2; index++) 
+			{
 				*dst_cs8 = int8_t(*src_ptr >> 4);
 				src_ptr++;
 				dst_cs8++;
 			}
 		}
 	}
-	else {
-		// TODO: I think this is not needed anymore with libiio 1.0 !
-		/*
+	else 
+	{
 		int16_t conv = 0, *conv_ptr = &conv;
-		uint8_t *src = (uint8_t *)iio_block_first(rxblock, chn) + byte_offset;
-		int16_t const *src_ptr = (int16_t *)src;
-
-		for (unsigned int i = 0; i < channel_list.size(); i++) {
+		ptrdiff_t buf_step = iio_device_get_sample_size(dev, rxmask);
+		for (unsigned int i = 0; i < channel_list.size(); i++) 
+		{
 			iio_channel *chn = channel_list[i];
+			uint8_t *src = (uint8_t *)iio_block_first(rxblock, chn) + byte_offset;
+			int16_t const *src_ptr = (int16_t *)src;
 			unsigned int index = i / 2;
 
-			if (format == PLUTO_SDR_CS16) {
-
+			if (format == PLUTO_SDR_CS16) 
+			{
 				int16_t *dst_cs16 = (int16_t *)buffs[index];
 
-				for (size_t j = 0; j < items; ++j) {
+				for (size_t j = 0; j < items; ++j) 
+				{
 					iio_channel_convert(chn, conv_ptr, src_ptr);
-					src_ptr += p_inc/sizeof(*p_dat);
+					src_ptr += buf_step / sizeof(*p_dat);
 					dst_cs16[j * 2 + i] = conv;
 				}
 			}
-			else if (format == PLUTO_SDR_CF32) {
-
+			else if (format == PLUTO_SDR_CF32) 
+			{
 				float *dst_cf32 = (float *)buffs[index];
 
-				for (size_t j = 0; j < items; ++j) {
+				for (size_t j = 0; j < items; ++j) 
+				{
 					iio_channel_convert(chn, conv_ptr, src_ptr);
-					src_ptr += p_inc/sizeof(*p_dat);
+					src_ptr += buf_step / sizeof(*p_dat);
 					dst_cf32[j * 2 + i] = float(conv) / 2048.0f;
 				}
 			}
-			else if (format == PLUTO_SDR_CS8) {
-
+			else if (format == PLUTO_SDR_CS8) 
+			{
 				int8_t *dst_cs8 = (int8_t *)buffs[index];
 
-				for (size_t j = 0; j < items; ++j) {
+				for (size_t j = 0; j < items; ++j) 
+				{
 					iio_channel_convert(chn, conv_ptr, src_ptr);
-					src_ptr += p_inc/sizeof(*p_dat);
+					src_ptr += buf_step / sizeof(*p_dat);
 					dst_cs8[j * 2 + i] = int8_t(conv >> 4);
 				}
 			}
 		}
-		*/
 	}
 
 	items_in_buffer -= items;
 	//printf("items=%zu p_inc=%lu, p_dat=%lu\n", items, (unsigned long)p_inc, (unsigned long)p_dat);
 	byte_offset += items * p_inc;
-	printf("finished read %ld items: items_in_buffer=%zu byte_offset=%zu\n", items, items_in_buffer, byte_offset);
+	//printf("finished read %ld items: items_in_buffer=%zu byte_offset=%zu\n", items, items_in_buffer, byte_offset);
 
 	return(items);
 
