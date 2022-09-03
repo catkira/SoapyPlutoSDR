@@ -474,17 +474,9 @@ void SoapyPlutoSDR::setFrequency(const int direction, const size_t channel,
     if (direction == SOAPY_SDR_RX) {
 
         std::lock_guard<pluto_spin_mutex> lock(rx_device_mutex);
-        printf("set frequency to %lld\n", freq);
-        printf("find channel result = %08x\n",
-               (void *)iio_device_find_channel(dev, "altvoltage0", true));
         iio_channel_attr_write_longlong(
             iio_device_find_channel(dev, "altvoltage0", true), "frequency",
             freq);
-        long long val = 0;
-        long result = iio_channel_attr_read_longlong(
-            iio_device_find_channel(dev, "altvoltage0", true), "frequency",
-            &val);
-        printf("read frequency = %lld result = %ld\n", val, result);
     }
 
     else if (direction == SOAPY_SDR_TX) {
@@ -577,7 +569,7 @@ void SoapyPlutoSDR::setSampleRate(const int direction, const size_t channel,
             decimation = true;
             samplerate = samplerate * 8;
         }
-        printf("set samplerate to %lu\n", samplerate);
+        printf("set samplerate to %llu\n", samplerate);
         iio_channel_attr_write_longlong(
             iio_device_find_channel(dev, "voltage0", false),
             "sampling_frequency", samplerate);
