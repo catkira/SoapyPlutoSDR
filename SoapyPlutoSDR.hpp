@@ -66,16 +66,17 @@ class tx_streamer {
     int flush();
 
   private:
-    int send_buf();
     bool has_direct_copy();
 
     std::vector<iio_channel *> channel_list;
     const iio_device *dev;
     const plutosdrStreamFormat format;
 
+    struct iio_block **blocks;
     iio_buffer *buf;
-    size_t buf_size;
-    size_t items_in_buf;
+    unsigned int nb_blocks;
+    unsigned int num_enqueued;
+    unsigned int current_block;
     bool direct_copy;
     struct iio_channels_mask *txmask;
     struct iio_stream *txstream;
