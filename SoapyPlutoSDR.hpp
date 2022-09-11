@@ -77,6 +77,7 @@ class tx_streamer {
     unsigned int nb_blocks;
     unsigned int num_enqueued;
     unsigned int current_block;
+    bool buf_enabled;
     bool direct_copy;
     struct iio_channels_mask *txmask;
     struct iio_stream *txstream;

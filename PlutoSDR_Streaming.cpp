@@ -556,13 +556,14 @@ bool rx_streamer::has_direct_copy()
 
 tx_streamer::tx_streamer(const iio_device *_dev, const plutosdrStreamFormat _format,
                          const std::vector<size_t> &channels, const SoapySDR::Kwargs &args)
-    : dev(_dev), format(_format), buf(nullptr), nb_blocks(4), num_enqueued(0), current_block(0)
+    : dev(_dev), format(_format), buf(nullptr), nb_blocks(4), num_enqueued(0), current_block(0), buf_enabled(false)
 {
     if (dev == nullptr) {
-        SoapySDR_logf(SOAPY_SDR_ERROR, "cf-ad9361-lpc not found!");
-        throw std::runtime_error("cf-ad9361-lpc not found!");
+        SoapySDR_logf(SOAPY_SDR_ERROR, "cf-ad9361-dds-core-lpc not found!");
+        throw std::runtime_error("cf-ad9361-dds-core-lpc not found!");
     }
     unsigned int nb_channels = iio_device_get_channels_count(dev), i;
+    printf("found %u channels\n", nb_channels);
     txmask = iio_create_channels_mask(nb_channels);
     for (i = 0; i < nb_channels; i++)
         iio_channel_disable(iio_device_get_channel(dev, i), txmask);
@@ -619,8 +620,10 @@ int tx_streamer::send(const void *const *buffs, const size_t numElems, int &flag
 
     // int16_t src = 0;
     // int16_t const *src_ptr = &src;
+    printf("send %lu elements\n", numElems);
 
     if (direct_copy) {
+        printf("direct copy\n");
         int16_t *dst_ptr = (int16_t *)iio_block_first(blocks[current_block], channel_list[0]);
         if (direct_copy && format == PLUTO_SDR_CS16) {
             // optimize for single TX, 2 channel (I/Q), same endianess direct copy
@@ -708,21 +711,32 @@ int tx_streamer::send(const void *const *buffs, const size_t numElems, int &flag
         // }
     }
     int err = iio_block_enqueue(blocks[current_block], items * tx_sample_sz, false);
-    if (err) {
+    if (err < 0) {
         // dev_perror(dev, err, "Unable to enqueue block");
-        // return iio_ptr(err);
+        printf("enqueue error\n");
         return 0;
     }
     if (num_enqueued < nb_blocks)
         ++num_enqueued;
+
+    if (!buf_enabled) {
+        printf("enable....\n");
+        err = iio_buffer_enable(buf);
+		if (err < 0) {
+			printf("enable error\n");
+		}
+        buf_enabled = true;
+    }
+
     current_block = (current_block + 1) % nb_blocks;
 
     // only start dequeueing when all blocks are enqueued
-    if (num_enqueued == nb_blocks)
+    if (num_enqueued == nb_blocks) {
         err = iio_block_dequeue(blocks[current_block], false); // nonblock = false
-    if (err < 0) {
-        // handle error
+        if (err < 0)
+            printf("dequeue error\n");
     }
+    printf("return\n");
     return items;
 }
 
