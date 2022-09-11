@@ -77,6 +77,9 @@ class tx_streamer {
     size_t buf_size;
     size_t items_in_buf;
     bool direct_copy;
+    struct iio_channels_mask *txmask;
+    struct iio_stream *txstream;
+    const struct iio_context *ctx;     
 };
 
 // A local spin_mutex usable with std::lock_guard

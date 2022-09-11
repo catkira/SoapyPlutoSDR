@@ -326,13 +326,12 @@ rx_streamer::rx_streamer(const iio_device *_dev,
     }
 }
 
-rx_streamer::~rx_streamer() {
-    if (buf) {
-        iio_buffer_cancel(buf);
-        iio_buffer_destroy(buf);
-    }
-    for (unsigned int i = 0; i < channel_list.size(); ++i)
-        iio_channel_disable(channel_list[i], rxmask);
+rx_streamer::~rx_streamer() 
+{
+    if (buf)
+        iio_buffer_destroy(buf); 
+    if (rxmask)
+        iio_channels_mask_destroy(rxmask);
 }
 
 size_t rx_streamer::recv(void *const *buffs, const size_t numElems, int &flags,
@@ -418,7 +417,8 @@ size_t rx_streamer::recv(void *const *buffs, const size_t numElems, int &flags,
                 dst_cs8++;
             }
         }
-    } else {
+    } 
+    else {
         int16_t conv = 0, *conv_ptr = &conv;
         ptrdiff_t buf_step = iio_device_get_sample_size(dev, rxmask);
         for (unsigned int i = 0; i < channel_list.size(); i++) {
@@ -467,7 +467,8 @@ size_t rx_streamer::recv(void *const *buffs, const size_t numElems, int &flags,
 }
 
 int rx_streamer::start(const int flags, const long long timeNs,
-                       const size_t numElems) {
+                       const size_t numElems)
+{
     // force proper stop before
     stop(flags, timeNs);
 
@@ -498,7 +499,8 @@ int rx_streamer::start(const int flags, const long long timeNs,
     return 0;
 }
 
-int rx_streamer::stop(const int flags, const long long timeNs) {
+int rx_streamer::stop(const int flags, const long long timeNs)
+{
     // cancel first
     if (buf) {
         iio_buffer_cancel(buf);
@@ -515,17 +517,22 @@ int rx_streamer::stop(const int flags, const long long timeNs) {
     return 0;
 }
 
-void rx_streamer::set_buffer_size(const size_t _buffer_size) {
+void rx_streamer::set_buffer_size(const size_t _buffer_size)
+{
     this->buffer_size = _buffer_size;
     // this->buffer_size=10000;
     // this->buffer_size=1048576;
 }
 
-size_t rx_streamer::get_mtu_size() { return this->mtu_size; }
+size_t rx_streamer::get_mtu_size()
+{
+    return this->mtu_size; 
+}
 
 // return wether can we optimize for single RX, 2 channel (I/Q), same endianess
 // direct copy
-bool rx_streamer::has_direct_copy() {
+bool rx_streamer::has_direct_copy()
+{
     if (channel_list.size() != 2) // one RX with I + Q
         return false;
 
@@ -552,12 +559,10 @@ tx_streamer::tx_streamer(const iio_device *_dev,
     : dev(_dev), format(_format), buf(nullptr) {}
 
 tx_streamer::~tx_streamer() {
-    /*
-        if (buf) { iio_buffer_destroy(buf); }
-
-        for(unsigned int i=0;i<channel_list.size(); ++i)
-                iio_channel_disable(channel_list[i]);
-    */
+    if (buf)
+        iio_buffer_destroy(buf); 
+    if (txmask)
+        iio_channels_mask_destroy(txmask);
 }
 
 int tx_streamer::send(const void *const *buffs, const size_t numElems,
