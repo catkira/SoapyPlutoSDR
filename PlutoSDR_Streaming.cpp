@@ -608,11 +608,13 @@ int tx_streamer::send(const void *const *buffs, const size_t numElems, int &flag
         return 0;
     }
     size_t tx_sample_sz = iio_device_get_sample_size(dev, txmask);
+    // printf("sample size = %lu\n", tx_sample_sz);
     // ptrdiff_t p_inc = tx_sample_sz;
     size_t block_size = (size_t)iio_block_end(blocks[current_block]) -
                         (size_t)iio_block_start(blocks[current_block]);
-    if (tx_sample_sz * numElems < block_size) {
+    if (tx_sample_sz * numElems > block_size) {
         iio_block_destroy(blocks[current_block]);
+        printf("reallocate block\n");
         blocks[current_block] = iio_buffer_create_block(buf, block_size);
     }
 
@@ -620,10 +622,9 @@ int tx_streamer::send(const void *const *buffs, const size_t numElems, int &flag
 
     // int16_t src = 0;
     // int16_t const *src_ptr = &src;
-    printf("send %lu elements\n", numElems);
+    // printf("send %lu elements\n", numElems);
 
     if (direct_copy) {
-        printf("direct copy\n");
         int16_t *dst_ptr = (int16_t *)iio_block_first(blocks[current_block], channel_list[0]);
         if (direct_copy && format == PLUTO_SDR_CS16) {
             // optimize for single TX, 2 channel (I/Q), same endianess direct copy
@@ -710,7 +711,8 @@ int tx_streamer::send(const void *const *buffs, const size_t numElems, int &flag
         //     }
         // }
     }
-    int err = iio_block_enqueue(blocks[current_block], items * tx_sample_sz, false);
+    // printf("enqueue block %i\n",current_block);
+    int err = iio_block_enqueue(blocks[current_block], tx_sample_sz * numElems, false);
     if (err < 0) {
         // dev_perror(dev, err, "Unable to enqueue block");
         printf("enqueue error\n");
@@ -732,11 +734,12 @@ int tx_streamer::send(const void *const *buffs, const size_t numElems, int &flag
 
     // only start dequeueing when all blocks are enqueued
     if (num_enqueued == nb_blocks) {
+        // printf("dequeue block %i\n",current_block);
         err = iio_block_dequeue(blocks[current_block], false); // nonblock = false
         if (err < 0)
             printf("dequeue error\n");
     }
-    printf("return\n");
+    // printf("return\n");
     return items;
 }
 
