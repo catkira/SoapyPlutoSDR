@@ -556,7 +556,8 @@ bool rx_streamer::has_direct_copy()
 
 tx_streamer::tx_streamer(const iio_device *_dev, const plutosdrStreamFormat _format,
                          const std::vector<size_t> &channels, const SoapySDR::Kwargs &args)
-    : dev(_dev), format(_format), items_in_block(0), buf(nullptr), nb_blocks(4), num_enqueued(0), current_block(0), buf_enabled(false)
+    : dev(_dev), format(_format), items_in_block(0), buf(nullptr), nb_blocks(4), num_enqueued(0), 
+      current_block(0), buf_enabled(false), block_size(0)
 {
     if (dev == nullptr) {
         SoapySDR_logf(SOAPY_SDR_ERROR, "cf-ad9361-dds-core-lpc not found!");
@@ -580,13 +581,39 @@ tx_streamer::tx_streamer(const iio_device *_dev, const plutosdrStreamFormat _for
 
     buf = iio_device_create_buffer(dev, 0, txmask);
 
-    size_t initial_block_size = 100000;
+    long long samplerate;
+    iio_channel_attr_read_longlong(iio_device_find_channel(dev, "voltage0", true),
+                                    "sampling_frequency", &samplerate);
+    this->set_buffer_size_by_samplerate(samplerate);    
+
     blocks = (iio_block **)calloc(nb_blocks, sizeof(*blocks));
     if (!blocks) {
         // handle error
     }
     for (i = 0; i < nb_blocks; i++)
-        blocks[i] = iio_buffer_create_block(buf, initial_block_size);
+        blocks[i] = iio_buffer_create_block(buf, block_size);
+}
+
+void tx_streamer::set_mtu_size(const size_t mtu_size)
+{
+    this->block_size = mtu_size;
+    SoapySDR_logf(SOAPY_SDR_INFO, "Set MTU Size: %lu", (unsigned long)mtu_size);
+}
+
+void tx_streamer::set_buffer_size_by_samplerate(const size_t samplerate)
+{
+    int rounded_nb_samples_per_call = (int)::round(samplerate / 60.0);
+
+    int power_of_2_nb_samples = 0;
+
+    while (rounded_nb_samples_per_call > (1 << power_of_2_nb_samples)) {
+        power_of_2_nb_samples++;
+    }
+
+    unsigned long buffer_size = 1 << power_of_2_nb_samples;
+    SoapySDR_logf(SOAPY_SDR_INFO, "Auto setting Buffer Size: %lu", (unsigned long)buffer_size);
+
+    set_mtu_size(buffer_size);
 }
 
 tx_streamer::~tx_streamer()
@@ -623,8 +650,6 @@ int tx_streamer::send(const void *const *buffs, const size_t numElems, int &flag
         blocks[current_block] = iio_buffer_create_block(buf, block_size);
     }
 
-    size_t items = std::min(block_size, numElems);
-
     // int16_t src = 0;
     // int16_t const *src_ptr = &src;
     // printf("send %lu elements\n", numElems);
@@ -634,12 +659,12 @@ int tx_streamer::send(const void *const *buffs, const size_t numElems, int &flag
                             + items_in_block;
         if (direct_copy && format == PLUTO_SDR_CS16) {
             // optimize for single TX, 2 channel (I/Q), same endianess direct copy
-            memcpy(dst_ptr, buffs[0], 2 * sizeof(int16_t) * items);
+            memcpy(dst_ptr, buffs[0], 2 * sizeof(int16_t) * numElems);
         }
         else if (direct_copy && format == PLUTO_SDR_CS12) {
             uint8_t const *samples_cs12 = (uint8_t *)buffs[0];
 
-            for (size_t index = 0; index < items; ++index) {
+            for (size_t index = 0; index < numElems; ++index) {
                 // consume 24 bit (iiqIQQ)
                 uint16_t src0 = uint16_t(*(samples_cs12++));
                 uint16_t src1 = uint16_t(*(samples_cs12++));
@@ -655,7 +680,7 @@ int tx_streamer::send(const void *const *buffs, const size_t numElems, int &flag
         else if (direct_copy && format == PLUTO_SDR_CS8) {
             int8_t const *samples_cs8 = (int8_t *)buffs[0];
 
-            for (size_t index = 0; index < items * 2; ++index) {
+            for (size_t index = 0; index < numElems * 2; ++index) {
                 // consume (2x) 8bit (IQ)
                 // produce (2x) 16 bit, note the output is MSB aligned, scale = 32768 *dst_ptr =
                 // int16_t(*samples_cs8) << 8;
@@ -717,12 +742,12 @@ int tx_streamer::send(const void *const *buffs, const size_t numElems, int &flag
         //     }
         // }
     }
-    items_in_block += items;
+    items_in_block += numElems;
 
     if (tx_sample_sz * numElems == block_size)
         if(send_block(tx_sample_sz * items_in_block) < 0)
             printf("error in send_block()\n");
-    return items;
+    return numElems;
 }
 
 int tx_streamer::send_block(unsigned long num_bytes)

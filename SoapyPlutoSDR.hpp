@@ -64,10 +64,13 @@ class tx_streamer {
     int send(const void *const *buffs, const size_t numElems, int &flags,
              const long long timeNs, const long timeoutUs);
     int flush();
+    void set_buffer_size_by_samplerate(const size_t samplerate);
+
 
   private:
     bool has_direct_copy();
     int send_block(size_t num_bytes);
+    void set_mtu_size(const size_t mtu_size);
 
     std::vector<iio_channel *> channel_list;
     const iio_device *dev;
@@ -81,6 +84,7 @@ class tx_streamer {
     unsigned int current_block;
     bool buf_enabled;
     bool direct_copy;
+    unsigned int block_size;
     struct iio_channels_mask *txmask;
     struct iio_stream *txstream;
     const struct iio_context *ctx;     
