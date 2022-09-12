@@ -556,7 +556,7 @@ bool rx_streamer::has_direct_copy()
 
 tx_streamer::tx_streamer(const iio_device *_dev, const plutosdrStreamFormat _format,
                          const std::vector<size_t> &channels, const SoapySDR::Kwargs &args)
-    : dev(_dev), format(_format), buf(nullptr), nb_blocks(4), num_enqueued(0), current_block(0), buf_enabled(false)
+    : dev(_dev), format(_format), items_in_block(0), buf(nullptr), nb_blocks(4), num_enqueued(0), current_block(0), buf_enabled(false)
 {
     if (dev == nullptr) {
         SoapySDR_logf(SOAPY_SDR_ERROR, "cf-ad9361-dds-core-lpc not found!");
@@ -604,12 +604,17 @@ int tx_streamer::send(const void *const *buffs, const size_t numElems, int &flag
                       const long long timeNs, const long timeoutUs)
 
 {
-    if (!buf) {
+    if (!buf)
         return 0;
-    }
+
     size_t tx_sample_sz = iio_device_get_sample_size(dev, txmask);
     // printf("sample size = %lu\n", tx_sample_sz);
     // ptrdiff_t p_inc = tx_sample_sz;
+    size_t space_left = (size_t)iio_block_end(blocks[current_block]) -
+                        (size_t)iio_block_start(blocks[current_block]) - items_in_block * tx_sample_sz;
+    if (tx_sample_sz * numElems > space_left)
+        send_block(items_in_block * tx_sample_sz);  
+
     size_t block_size = (size_t)iio_block_end(blocks[current_block]) -
                         (size_t)iio_block_start(blocks[current_block]);
     if (tx_sample_sz * numElems > block_size) {
@@ -625,7 +630,8 @@ int tx_streamer::send(const void *const *buffs, const size_t numElems, int &flag
     // printf("send %lu elements\n", numElems);
 
     if (direct_copy) {
-        int16_t *dst_ptr = (int16_t *)iio_block_first(blocks[current_block], channel_list[0]);
+        int16_t *dst_ptr = (int16_t *)iio_block_first(blocks[current_block], channel_list[0]) 
+                            + items_in_block;
         if (direct_copy && format == PLUTO_SDR_CS16) {
             // optimize for single TX, 2 channel (I/Q), same endianess direct copy
             memcpy(dst_ptr, buffs[0], 2 * sizeof(int16_t) * items);
@@ -711,12 +717,22 @@ int tx_streamer::send(const void *const *buffs, const size_t numElems, int &flag
         //     }
         // }
     }
+    items_in_block += items;
+
+    if (tx_sample_sz * numElems == block_size)
+        if(send_block(tx_sample_sz * items_in_block) < 0)
+            printf("error in send_block()\n");
+    return items;
+}
+
+int tx_streamer::send_block(unsigned long num_bytes)
+{
     // printf("enqueue block %i\n",current_block);
-    int err = iio_block_enqueue(blocks[current_block], tx_sample_sz * numElems, false);
+    int err = iio_block_enqueue(blocks[current_block], num_bytes, false);
     if (err < 0) {
         // dev_perror(dev, err, "Unable to enqueue block");
         printf("enqueue error\n");
-        return 0;
+        return -1;
     }
     if (num_enqueued < nb_blocks)
         ++num_enqueued;
@@ -739,8 +755,8 @@ int tx_streamer::send(const void *const *buffs, const size_t numElems, int &flag
         if (err < 0)
             printf("dequeue error\n");
     }
-    // printf("return\n");
-    return items;
+    items_in_block = 0;
+    return 0;
 }
 
 // flush is not needed anymore

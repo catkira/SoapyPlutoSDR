@@ -67,12 +67,14 @@ class tx_streamer {
 
   private:
     bool has_direct_copy();
+    int send_block(size_t num_bytes);
 
     std::vector<iio_channel *> channel_list;
     const iio_device *dev;
     const plutosdrStreamFormat format;
 
     struct iio_block **blocks;
+    size_t items_in_block;
     iio_buffer *buf;
     unsigned int nb_blocks;
     unsigned int num_enqueued;
