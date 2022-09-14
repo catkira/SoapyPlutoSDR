@@ -744,7 +744,7 @@ int tx_streamer::send(const void *const *buffs, const size_t numElems, int &flag
     }
     items_in_block += numElems;
 
-    if (tx_sample_sz * numElems == block_size)
+    if (tx_sample_sz * numElems == block_size || (flags & SOAPY_SDR_END_BURST))
         if(send_block(tx_sample_sz * items_in_block) < 0)
             printf("error in send_block()\n");
     return numElems;
